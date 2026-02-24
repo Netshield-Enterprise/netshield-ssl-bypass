@@ -1,0 +1,60 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# APK analysis output
+apk_analysis/
+*.apk
+*.dex
+
+# Reports
+reports/
+*.json
+*.html
+
+# Logs
+*.log
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frida
+frida-server*
+
+# Temporary files
+tmp/
+temp/
+
+# Documents
+docs/*.md

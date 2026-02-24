@@ -1,0 +1,78 @@
+# NetShield SSL Bypass Tool Configuration
+
+# Frida Configuration
+frida:
+  server_download_url: "https://github.com/frida/frida/releases"
+  server_path: "/data/local/tmp/frida-server"
+  default_port: 27042
+  spawn_timeout: 10  # seconds
+
+# APK Analysis
+apk:
+  apktool_path: "apktool"  # Use system apktool or specify path
+  output_dir: "./apk_analysis"
+  cleanup_after_analysis: false
+
+# Device Configuration
+device:
+  adb_path: "adb"  # Use system adb or specify path
+  default_device: null  # null = auto-detect, or specify device ID
+  root_required: true
+
+# Proxy Configuration
+proxy:
+  default_host: "127.0.0.1"
+  default_port: 8080
+  cert_path: null  # Path to proxy CA certificate
+
+# Detection Patterns
+detection:
+  # Patterns to search for in decompiled code
+  patterns:
+    okhttp:
+      - "okhttp3.CertificatePinner"
+      - "CertificatePinner.Builder"
+      - ".certificatePinner("
+    
+    trustmanager:
+      - "X509TrustManager"
+      - "checkServerTrusted"
+      - "TrustManagerFactory"
+    
+    network_config:
+      - "network_security_config"
+      - "pin-set"
+      - "trust-anchors"
+    
+    flutter:
+      - "libflutter.so"
+      - "io.flutter"
+    
+    conscrypt:
+      - "org.conscrypt"
+      - "libconscrypt"
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "./netshield-ssl-bypass.log"
+  console_output: true
+  color_output: true
+
+# Bypass Scripts
+bypass:
+  scripts_dir: "./frida_scripts"
+  # Order matters - scripts are tried in this order
+  script_priority:
+    - "flutter_bypass.js"
+    - "okhttp_bypass.js"
+    - "trustmanager_bypass.js"
+    - "universal_bypass.js"
+
+# Reporting
+reporting:
+  output_dir: "./reports"
+  formats:
+    - "json"
+    - "html"
+  include_screenshots: false
