@@ -7,6 +7,8 @@
 
 console.log("[*] Universal SSL Bypass Script Loaded");
 
+Java.perform(function() {
+
 // Bypass TrustManagerImpl (Android)
 try {
     var TrustManagerImpl = Java.use("com.android.org.conscrypt.TrustManagerImpl");
@@ -26,7 +28,7 @@ try {
     console.log("[-] TrustManagerImpl not found: " + err);
 }
 
-// Bypass X509TrustManager
+// Bypass X509TrustManager — create a permissive TrustManager and hook SSLContext.init
 try {
     var X509TrustManager = Java.use("javax.net.ssl.X509TrustManager");
     var SSLContext = Java.use("javax.net.ssl.SSLContext");
@@ -59,27 +61,9 @@ try {
         SSLContext_init.call(this, keyManager, TrustManagers, secureRandom);
     };
     
-    console.log("[+] X509TrustManager hooks installed");
+    console.log("[+] X509TrustManager + SSLContext hooks installed");
 } catch (err) {
     console.log("[-] X509TrustManager hook failed: " + err);
-}
-
-// Bypass SSLContext
-try {
-    var SSLContext = Java.use("javax.net.ssl.SSLContext");
-    
-    SSLContext.init.overload(
-        "[Ljavax.net.ssl.KeyManager;",
-        "[Ljavax.net.ssl.TrustManager;",
-        "java.security.SecureRandom"
-    ).implementation = function(keyManager, trustManager, secureRandom) {
-        console.log("[+] SSLContext.init() bypassed");
-        this.init(keyManager, null, secureRandom);
-    };
-    
-    console.log("[+] SSLContext hooks installed");
-} catch (err) {
-    console.log("[-] SSLContext hook failed: " + err);
 }
 
 // Bypass HostnameVerifier
@@ -137,3 +121,5 @@ try {
 }
 
 console.log("[*] Universal SSL Bypass Script Complete");
+
+}); // end Java.perform

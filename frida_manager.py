@@ -107,22 +107,23 @@ class FridaManager:
         
         try:
             # Try to attach by package name first
-            try:
-                self.session = self.device.attach(package_name)
-                console.print(f"[green]✓[/green] Attached to process: {package_name}")
-                return True
-            except:
-                # Try as PID
-                pid = int(package_name)
-                self.session = self.device.attach(pid)
-                console.print(f"[green]✓[/green] Attached to PID: {pid}")
-                return True
+            self.session = self.device.attach(package_name)
+            console.print(f"[green]✓[/green] Attached to process: {package_name}")
+            return True
                 
         except frida.ProcessNotFoundError:
             console.print(f"[red]✗[/red] Process not found: {package_name}")
             console.print("[yellow]⚠[/yellow] Make sure the app is running")
             return False
         except Exception as e:
+            # If attach by name failed, try interpreting as PID
+            try:
+                pid = int(package_name)
+                self.session = self.device.attach(pid)
+                console.print(f"[green]✓[/green] Attached to PID: {pid}")
+                return True
+            except (ValueError, frida.ProcessNotFoundError):
+                pass
             console.print(f"[red]✗[/red] Failed to attach: {str(e)}")
             return False
     
@@ -309,7 +310,11 @@ class FridaManager:
                 return False
         
         # Select appropriate scripts based on detected pinning types
+        # Resolve scripts_dir relative to the tool's directory, not CWD
         scripts_dir = self.config['bypass']['scripts_dir']
+        tool_dir = os.path.dirname(os.path.abspath(__file__))
+        if not os.path.isabs(scripts_dir):
+            scripts_dir = os.path.join(tool_dir, scripts_dir)
         scripts_to_load = []
         
         # Add specific scripts for detected pinning types
@@ -352,9 +357,15 @@ class FridaManager:
     
     def cleanup(self) -> None:
         """Clean up Frida resources."""
-        if self.script:
-            self.script.unload()
-        if self.session:
-            self.session.detach()
+        try:
+            if self.script:
+                self.script.unload()
+        except Exception:
+            pass
+        try:
+            if self.session:
+                self.session.detach()
+        except Exception:
+            pass
         
         console.print("[green]✓[/green] Cleanup complete")

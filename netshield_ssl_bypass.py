@@ -16,17 +16,43 @@ import click
 import yaml
 import os
 import sys
+import re
 from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich import print as rprint
 
+# Suppress noisy androguard/loguru debug output (androguard uses loguru, not stdlib logging)
+try:
+    from loguru import logger as _loguru_logger
+    _loguru_logger.disable("androguard")
+    _loguru_logger.disable("pyaxmlparser")
+except ImportError:
+    pass
+
 from device_manager import DeviceManager
 from apk_analyzer import SSLPinningDetector
 from frida_manager import FridaManager
 
 console = Console()
+
+# Fix Rich FileProxy shutdown crash on Python 3.14+
+# During interpreter shutdown, GC calls FileProxy.__del__ → flush() → console.print()
+# which fails with ImportError because sys.meta_path is already None.
+# atexit handlers run before module teardown but GC runs after — so the only
+# reliable fix is to patch flush() itself to be safe.
+try:
+    from rich.file_proxy import FileProxy
+    _original_flush = FileProxy.flush
+    def _safe_flush(self):
+        try:
+            _original_flush(self)
+        except Exception:
+            pass
+    FileProxy.flush = _safe_flush
+except ImportError:
+    pass
 
 # Load configuration
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config.yaml')
@@ -122,8 +148,50 @@ def detect(apk_path, output):
     config = load_config()
     detector = SSLPinningDetector(config)
     
-    # Analyze APK
-    results = detector.analyze_apk(apk_path)
+    # If a directory was provided, find APK files inside it
+    split_apks = []
+    if os.path.isdir(apk_path):
+        apk_files = []
+        for root, dirs, files in os.walk(apk_path):
+            # Skip macOS resource fork directories
+            if '__MACOSX' in root:
+                continue
+            for f in files:
+                if f.endswith('.apk'):
+                    apk_files.append(os.path.join(root, f))
+        
+        if not apk_files:
+            console.print(f"[red]✗[/red] No .apk files found in directory: {apk_path}")
+            sys.exit(1)
+        
+        # Prefer base.apk for code analysis (contains DEX, manifest, resources)
+        base_apks = [f for f in apk_files if os.path.basename(f) == 'base.apk']
+        if base_apks:
+            apk_path = base_apks[0]
+        else:
+            apk_path = apk_files[0]
+        
+        # Identify architecture split APKs for native library analysis
+        split_apks = [
+            f for f in apk_files
+            if f != apk_path and re.search(r'split_config\.(arm|x86|mips)', os.path.basename(f))
+        ]
+        
+        if len(apk_files) > 1:
+            console.print(f"[cyan]→[/cyan] Split APK bundle detected ({len(apk_files)} APKs):")
+            for f in apk_files:
+                basename = os.path.basename(f)
+                if f == apk_path:
+                    console.print(f"    • {basename} [bold green]← code analysis[/bold green]")
+                elif f in split_apks:
+                    console.print(f"    • {basename} [bold yellow]← native lib scan[/bold yellow]")
+                else:
+                    console.print(f"    • {basename}")
+        else:
+            console.print(f"[cyan]→[/cyan] Using: [bold]{apk_path}[/bold]")
+    
+    # Analyze APK (pass arch split APKs for native library detection)
+    results = detector.analyze_apk(apk_path, split_apks=split_apks)
     
     # Save results if requested
     if output:
@@ -223,15 +291,56 @@ def interactive():
     package_name = None
     
     if apk_path and os.path.exists(apk_path):
-        detector = SSLPinningDetector(config)
-        results = detector.analyze_apk(apk_path)
-        pinning_types = results.get('pinning_types', [])
-        package_name = results.get('package_name')
+        # Handle directory input (e.g. split APK bundle)
+        split_apks = []
+        if os.path.isdir(apk_path):
+            apk_files = []
+            for root, dirs, files in os.walk(apk_path):
+                if '__MACOSX' in root:
+                    continue
+                for f in files:
+                    if f.endswith('.apk'):
+                        apk_files.append(os.path.join(root, f))
+            
+            if not apk_files:
+                console.print(f"[red]✗[/red] No .apk files found in directory: {apk_path}")
+            else:
+                # Prefer base.apk for code analysis
+                base_apks = [f for f in apk_files if os.path.basename(f) == 'base.apk']
+                if base_apks:
+                    apk_path = base_apks[0]
+                else:
+                    apk_path = apk_files[0]
+                
+                # Identify architecture split APKs for native library analysis
+                split_apks = [
+                    f for f in apk_files
+                    if f != apk_path and re.search(r'split_config\.(arm|x86|mips)', os.path.basename(f))
+                ]
+                
+                if len(apk_files) > 1:
+                    console.print(f"[cyan]→[/cyan] Split APK bundle detected ({len(apk_files)} APKs)")
+                    for f in apk_files:
+                        basename = os.path.basename(f)
+                        if f == apk_path:
+                            console.print(f"    • {basename} [bold green]← code analysis[/bold green]")
+                        elif f in split_apks:
+                            console.print(f"    • {basename} [bold yellow]← native lib scan[/bold yellow]")
+                        else:
+                            console.print(f"    • {basename}")
+                else:
+                    console.print(f"[cyan]→[/cyan] Using: [bold]{apk_path}[/bold]")
+        
+        if not os.path.isdir(apk_path):  # Only analyze if we resolved to a file
+            detector = SSLPinningDetector(config)
+            results = detector.analyze_apk(apk_path, split_apks=split_apks)
+            pinning_types = results.get('pinning_types', [])
+            package_name = results.get('package_name')
     
     # Step 5: Package name
     if not package_name:
         console.print("\n[bold cyan]Step 5: Target Application[/bold cyan]")
-        package_name = console.input("[bold]Enter package name: [/bold]")
+        package_name = console.input("[bold]Enter package name: [/bold]").strip()
     else:
         console.print(f"\n[bold cyan]Step 5: Target Application[/bold cyan]")
         console.print(f"[green]✓[/green] Package name from APK: {package_name}")

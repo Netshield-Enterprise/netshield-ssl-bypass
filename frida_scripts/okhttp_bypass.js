@@ -7,6 +7,8 @@
 
 console.log("[*] OkHttp SSL Bypass Script Loaded");
 
+Java.perform(function() {
+
 // Bypass OkHttp3 CertificatePinner
 try {
     var CertificatePinner = Java.use("okhttp3.CertificatePinner");
@@ -17,12 +19,14 @@ try {
         return;
     };
 
-    // Hook alternative check method
-    if (CertificatePinner.check.overload("java.lang.String", "[Ljava.security.cert.Certificate;")) {
+    // Hook alternative check method (may not exist in all versions)
+    try {
         CertificatePinner.check.overload("java.lang.String", "[Ljava.security.cert.Certificate;").implementation = function (hostname, peerCertificates) {
             console.log("[+] OkHttp CertificatePinner.check() (alt) bypassed for: " + hostname);
             return;
         };
+    } catch (e) {
+        console.log("[*] Alternative check overload not found (normal for some OkHttp versions)");
     }
 
     console.log("[+] OkHttp3 CertificatePinner hooks installed");
@@ -41,7 +45,7 @@ try {
 
     CertificatePinnerBuilder.build.implementation = function () {
         console.log("[+] OkHttp CertificatePinner.Builder.build() - returning empty pinner");
-        return Java.use("okhttp3.CertificatePinner").get(0).field("DEFAULT").value;
+        return Java.use("okhttp3.CertificatePinner").DEFAULT.value;
     };
 
     console.log("[+] OkHttp3 CertificatePinner.Builder hooks installed");
@@ -78,3 +82,5 @@ try {
 }
 
 console.log("[*] OkHttp SSL Bypass Script Complete");
+
+}); // end Java.perform
