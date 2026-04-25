@@ -25,15 +25,12 @@ jobs:
         uses: coderabbitai/openai-pr-reviewer@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Map your Gemini API key to the OPENAI_API_KEY env var
           OPENAI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         with:
           debug: false
           review_simple_changes: false
           review_comment_lgtm: false
-          # Use the Google AI Studio OpenAI-compatible endpoint
           openai_base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
-          # Specify Gemini models
           openai_light_model: "gemini-1.5-flash"
           openai_heavy_model: "gemini-1.5-pro"
           system_message: |
