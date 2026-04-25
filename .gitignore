@@ -58,3 +58,6 @@ temp/
 
 # Documents
 docs/*.md
+
+# test
+tests/

@@ -245,14 +245,20 @@ class DeviceManager:
             
             time.sleep(1)
             
-            # Start frida-server in background using nohup for persistence
-            subprocess.Popen(
-                [self.adb_path, '-s', self.selected_device, 'shell'],
-                stdin=subprocess.PIPE,
+            # Start frida-server in background
+            # Use a direct shell command with 'su -c' to avoid keeping the pipe open
+            proc = subprocess.Popen(
+                [self.adb_path, '-s', self.selected_device, 'shell',
+                 'su', '-c', f'nohup {self.frida_server_path} >/dev/null 2>&1 &'],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                text=True
-            ).communicate(input=f'su\nnohup {self.frida_server_path} &\nexit\n', timeout=3)
+                stderr=subprocess.DEVNULL
+            )
+            # Give the server a moment to start, don't wait for the process to end
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                # This is fine — frida-server may keep the shell alive
+                pass
             
             time.sleep(2)
             
@@ -278,18 +284,26 @@ class DeviceManager:
         if not self.selected_device:
             return False
         
+        # Method 1: Use frida Python API to actually try connecting
         try:
-            # Use shell piping for compatibility
+            import frida
+            device = frida.get_device(self.selected_device, timeout=3)
+            # If we can enumerate processes, frida-server is definitely running
+            device.enumerate_processes()
+            return True
+        except Exception:
+            pass
+        
+        # Method 2: Fall back to pidof (no grep-matches-itself problem)
+        try:
             result = subprocess.run(
-                [self.adb_path, '-s', self.selected_device, 'shell'],
-                input='su\nps | grep frida-server\nexit\n',
+                [self.adb_path, '-s', self.selected_device, 'shell', 'pidof', 'frida-server'],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
-            
-            return 'frida-server' in result.stdout
-        except:
+            return result.returncode == 0 and result.stdout.strip() != ''
+        except Exception:
             return False
     
     def setup_port_forwarding(self) -> bool:

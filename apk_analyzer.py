@@ -91,15 +91,21 @@ class SSLPinningDetector:
         """
         self.config = config
         self.apktool_path = config['apk']['apktool_path']
-        self.output_dir = config['apk']['output_dir']
+        # Resolve output_dir relative to the tool's directory, not CWD
+        output_dir = config['apk']['output_dir']
+        if not os.path.isabs(output_dir):
+            tool_dir = os.path.dirname(os.path.abspath(__file__))
+            output_dir = os.path.join(tool_dir, output_dir)
+        self.output_dir = output_dir
         self.detection_results = {}
     
-    def analyze_apk(self, apk_path: str) -> Dict:
+    def analyze_apk(self, apk_path: str, split_apks: List[str] = None) -> Dict:
         """
         Perform comprehensive analysis on an APK file.
         
         Args:
             apk_path: Path to the APK file
+            split_apks: Optional list of split APK paths (e.g. arch-specific) for native lib detection
             
         Returns:
             Dictionary containing detection results
@@ -129,47 +135,47 @@ class SSLPinningDetector:
         ) as progress:
             
             # Extract package name
-            task = progress.add_task("Extracting package info...", total=None)
+            task = progress.add_task("Extracting package info...", total=1)
             results['package_name'] = self._get_package_name(apk_path)
-            progress.update(task, completed=True)
+            progress.update(task, completed=1)
             
             # Check for network security config
-            task = progress.add_task("Checking network security config...", total=None)
+            task = progress.add_task("Checking network security config...", total=1)
             network_config = self._check_network_security_config(apk_path)
             if network_config:
                 results['pinning_detected'] = True
                 results['pinning_types'].append('network_security_config')
                 results['details']['network_security_config'] = network_config
-            progress.update(task, completed=True)
+            progress.update(task, completed=1)
             
             # Decompile APK
-            task = progress.add_task("Decompiling APK...", total=None)
+            task = progress.add_task("Decompiling APK...", total=1)
             decompiled_path = self._decompile_apk(apk_path)
-            progress.update(task, completed=True)
+            progress.update(task, completed=1)
             
             if decompiled_path:
                 # Check for obfuscation
-                task = progress.add_task("Detecting obfuscation...", total=None)
+                task = progress.add_task("Detecting obfuscation...", total=1)
                 results['obfuscation_detected'] = self._detect_obfuscation(decompiled_path)
-                progress.update(task, completed=True)
+                progress.update(task, completed=1)
                 
                 # Analyze decompiled code
-                task = progress.add_task("Analyzing code patterns...", total=None)
+                task = progress.add_task("Analyzing code patterns...", total=1)
                 code_analysis = self._analyze_code_patterns(decompiled_path)
                 results['details'].update(code_analysis)
-                progress.update(task, completed=True)
+                progress.update(task, completed=1)
                 
-                # Check for native libraries
-                task = progress.add_task("Checking native libraries...", total=None)
-                native_libs = self._check_native_libraries(decompiled_path)
+                # Check for native libraries (from decompiled APK + arch split APKs)
+                task = progress.add_task("Checking native libraries...", total=1)
+                native_libs = self._check_native_libraries(decompiled_path, split_apks=split_apks or [])
                 results['native_libraries'] = native_libs
-                progress.update(task, completed=True)
+                progress.update(task, completed=1)
                 
                 # Obfuscation-resistant string analysis
-                task = progress.add_task("Analyzing string pool (obfuscation-resistant)...", total=None)
+                task = progress.add_task("Analyzing string pool (obfuscation-resistant)...", total=1)
                 string_analysis = self._analyze_string_pool(apk_path)
                 results['details']['string_analysis'] = string_analysis
-                progress.update(task, completed=True)
+                progress.update(task, completed=1)
                 
                 # Detect Flutter
                 if 'libflutter.so' in native_libs:
@@ -179,7 +185,7 @@ class SSLPinningDetector:
                 
                 # Update pinning types based on code analysis
                 for pinning_type, detected in code_analysis.items():
-                    if detected and pinning_type not in results['pinning_types']:
+                    if isinstance(detected, dict) and detected.get('detected') and pinning_type not in results['pinning_types']:
                         results['pinning_detected'] = True
                         results['pinning_types'].append(pinning_type)
                 
@@ -230,9 +236,6 @@ class SSLPinningDetector:
         """Check for network security configuration with pinning."""
         try:
             with zipfile.ZipFile(apk_path, 'r') as zip_ref:
-                # Check AndroidManifest.xml for network config reference
-                manifest_data = zip_ref.read('AndroidManifest.xml')
-                
                 # Try to find network_security_config.xml
                 config_paths = [
                     'res/xml/network_security_config.xml',
@@ -241,10 +244,42 @@ class SSLPinningDetector:
                 
                 for config_path in config_paths:
                     try:
-                        config_data = zip_ref.read(config_path).decode('utf-8')
+                        raw_data = zip_ref.read(config_path)
+                        config_data = None
+                        
+                        # Try plain text first (rebuilt APKs)
+                        try:
+                            config_data = raw_data.decode('utf-8')
+                        except (UnicodeDecodeError, ValueError):
+                            pass
+                        
+                        # Fallback: try parsing as Android binary XML
+                        if config_data is None:
+                            try:
+                                from pyaxmlparser import APK as PyAPK
+                                import tempfile
+                                # Write raw data to temp file for parsing
+                                with tempfile.NamedTemporaryFile(suffix='.xml', delete=False) as tmp:
+                                    tmp.write(raw_data)
+                                    tmp_path = tmp.name
+                                try:
+                                    from pyaxmlparser.axmlprinter import AXMLPrinter
+                                    printer = AXMLPrinter(raw_data)
+                                    config_data = printer.get_xml()
+                                    if isinstance(config_data, bytes):
+                                        config_data = config_data.decode('utf-8')
+                                finally:
+                                    os.unlink(tmp_path)
+                            except ImportError:
+                                console.print("[yellow]⚠[/yellow] pyaxmlparser not available for binary XML parsing")
+                            except Exception:
+                                pass
+                        
+                        if config_data is None:
+                            continue
                         
                         # Check for pin-set elements
-                        if '<pin-set>' in config_data or 'pin digest' in config_data:
+                        if '<pin-set' in config_data or 'pin digest' in config_data or 'pin-set' in config_data:
                             console.print("[yellow]⚠[/yellow] Network security config with pinning detected")
                             return {
                                 'found': True,
@@ -298,19 +333,23 @@ class SSLPinningDetector:
         if not os.path.exists(smali_dir):
             return False
         
-        obfuscation_indicators = 0
         total_classes = 0
         short_named_classes = 0
+        max_sample = 100
         
-        # Sample some smali files
+        # Sample up to max_sample smali files across the entire tree
         for root, dirs, files in os.walk(smali_dir):
-            for file in files[:100]:  # Sample first 100 files
+            for file in files:
+                if total_classes >= max_sample:
+                    break
                 if file.endswith('.smali'):
                     total_classes += 1
                     # Check for single-letter class names (common in obfuscation)
                     class_name = file.replace('.smali', '')
                     if len(class_name) <= 2 and class_name.isalpha():
                         short_named_classes += 1
+            if total_classes >= max_sample:
+                break
         
         if total_classes > 0:
             obfuscation_ratio = short_named_classes / total_classes
@@ -440,16 +479,33 @@ class SSLPinningDetector:
         
         return results
     
-    def _check_native_libraries(self, decompiled_path: str) -> List[str]:
-        """Check for native libraries in the APK."""
-        lib_dir = os.path.join(decompiled_path, 'lib')
+    def _check_native_libraries(self, decompiled_path: str, split_apks: List[str] = None) -> List[str]:
+        """Check for native libraries in the APK and any arch split APKs."""
         native_libs = []
         
+        # Check decompiled base APK lib directory
+        lib_dir = os.path.join(decompiled_path, 'lib')
         if os.path.exists(lib_dir):
             for root, dirs, files in os.walk(lib_dir):
                 for file in files:
-                    if file.endswith('.so'):
+                    if file.endswith('.so') and file not in native_libs:
                         native_libs.append(file)
+        
+        # Also scan architecture split APKs (e.g. split_config.arm64_v8a.apk)
+        # These contain native libraries that aren't in base.apk
+        for split_apk in (split_apks or []):
+            try:
+                import zipfile
+                with zipfile.ZipFile(split_apk, 'r') as zf:
+                    for entry in zf.namelist():
+                        if entry.endswith('.so'):
+                            lib_name = os.path.basename(entry)
+                            if lib_name not in native_libs:
+                                native_libs.append(lib_name)
+                    if any(e.endswith('.so') for e in zf.namelist()):
+                        console.print(f"[cyan]→[/cyan] Scanned {os.path.basename(split_apk)} for native libraries")
+            except Exception as e:
+                console.print(f"[yellow]⚠[/yellow] Could not scan {os.path.basename(split_apk)}: {e}")
         
         if native_libs:
             console.print(f"[cyan]→[/cyan] Found {len(native_libs)} native libraries")
