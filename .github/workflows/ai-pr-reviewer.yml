@@ -30,7 +30,7 @@ jobs:
           debug: false
           review_simple_changes: false
           review_comment_lgtm: false
-          openai_base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+          openai_base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
           openai_light_model: "gemini-1.5-flash"
           openai_heavy_model: "gemini-1.5-pro"
           system_message: |
