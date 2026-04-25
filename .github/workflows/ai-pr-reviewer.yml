@@ -25,13 +25,17 @@ jobs:
         uses: coderabbitai/openai-pr-reviewer@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Map your Gemini API key to the OPENAI_API_KEY env var
+          OPENAI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         with:
           debug: false
           review_simple_changes: false
           review_comment_lgtm: false
-          openai_light_model: gpt-4o-mini
-          openai_heavy_model: gpt-4o
+          # Use the Google AI Studio OpenAI-compatible endpoint
+          openai_base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+          # Specify Gemini models
+          openai_light_model: "gemini-1.5-flash"
+          openai_heavy_model: "gemini-1.5-pro"
           system_message: |
             You are an expert DevSecOps engineer and Python developer.
             Please review this PR, looking for:
