@@ -22,17 +22,17 @@ jobs:
         uses: actions/checkout@v4
       
       - name: AI PR Reviewer
-        uses: anc95/ChatGPT-CodeReview@main
+        uses: coderabbitai/openai-pr-reviewer@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # The exact endpoint required for the action to use Google's servers
-          OPENAI_API_ENDPOINT: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
         with:
-          model: "gemini-1.5-pro"
-          language: "en"
-          top_p: 0.95
-          temperature: 0.1
+          debug: false
+          review_simple_changes: false
+          review_comment_lgtm: false
+          openai_base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+          openai_light_model: "gemini-2.0-flash"
+          openai_heavy_model: "gemini-2.5-flash"
           system_message: |
             You are an expert DevSecOps engineer and Python developer.
             Please review this PR, looking for:
