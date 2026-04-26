@@ -25,14 +25,13 @@ jobs:
         uses: coderabbitai/openai-pr-reviewer@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
           debug: false
           review_simple_changes: false
           review_comment_lgtm: false
-          openai_base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
-          openai_light_model: "gemini-2.0-flash"
-          openai_heavy_model: "gemini-2.5-flash"
+          openai_light_model: gpt-4o-mini
+          openai_heavy_model: gpt-4o
           system_message: |
             You are an expert DevSecOps engineer and Python developer.
             Please review this PR, looking for:
